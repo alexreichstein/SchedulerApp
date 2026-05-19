@@ -1,11 +1,17 @@
 package com.alex.schedulerapp.ui.event
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.alex.schedulerapp.ReminderWorker
 import com.alex.schedulerapp.data.local.entity.Event
 import com.alex.schedulerapp.data.local.entity.User
 import com.alex.schedulerapp.data.repository.EventRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,14 +20,15 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @HiltViewModel
 class EventViewModel @Inject constructor(
-    private val repository: EventRepository
+    private val repository: EventRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    // Formulärfält
     val title = MutableStateFlow("")
     val description = MutableStateFlow("")
     val selectedUserId = MutableStateFlow(1)
@@ -29,15 +36,10 @@ class EventViewModel @Inject constructor(
     val startTime = MutableStateFlow(LocalTime.of(8, 0))
     val endTime = MutableStateFlow(LocalTime.of(9, 0))
     val reminderMinutes = MutableStateFlow(15)
-
-    // Felmeddelanden
     val titleError = MutableStateFlow<String?>(null)
     val timeError = MutableStateFlow<String?>(null)
-
-    // Håller koll på vilket event vi redigerar
     private var currentEventId: Int = 0
 
-    // Alla användare för att visa i formuläret
     val allUsers: StateFlow<List<User>> = repository.getAllUsers()
         .stateIn(
             scope = viewModelScope,
@@ -45,12 +47,10 @@ class EventViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    // Fyller i formuläret med en befintlig händelse (för redigering)
     fun loadEvent(event: Event) {
         val zone = ZoneId.systemDefault()
         val start = java.time.Instant.ofEpochMilli(event.startTime).atZone(zone)
         val end = java.time.Instant.ofEpochMilli(event.endTime).atZone(zone)
-
         title.value = event.title
         description.value = event.description
         selectedUserId.value = event.userId
@@ -60,7 +60,6 @@ class EventViewModel @Inject constructor(
         reminderMinutes.value = event.reminderMinutes
     }
 
-    // Laddar ett event från databasen via id
     fun loadEventById(eventId: Int) {
         viewModelScope.launch {
             val event = repository.getEventById(eventId) ?: return@launch
@@ -69,28 +68,18 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    // Validerar och sparar ny händelse
     fun saveEvent(onSuccess: () -> Unit) {
         titleError.value = null
         timeError.value = null
-
-        if (title.value.isBlank()) {
-            titleError.value = "Titel krävs"
-            return
-        }
-        if (endTime.value <= startTime.value) {
-            timeError.value = "Sluttid måste vara efter starttid"
-            return
-        }
+        if (title.value.isBlank()) { titleError.value = "Titel krävs"; return }
+        if (endTime.value <= startTime.value) { timeError.value = "Sluttid måste vara efter starttid"; return }
 
         val zone = ZoneId.systemDefault()
-        val startMillis = selectedDate.value.atTime(startTime.value)
-            .atZone(zone).toInstant().toEpochMilli()
-        val endMillis = selectedDate.value.atTime(endTime.value)
-            .atZone(zone).toInstant().toEpochMilli()
+        val startMillis = selectedDate.value.atTime(startTime.value).atZone(zone).toInstant().toEpochMilli()
+        val endMillis = selectedDate.value.atTime(endTime.value).atZone(zone).toInstant().toEpochMilli()
 
         viewModelScope.launch {
-            repository.insertEvent(
+            val insertedId = repository.insertEvent(
                 Event(
                     title = title.value.trim(),
                     description = description.value.trim(),
@@ -99,30 +88,21 @@ class EventViewModel @Inject constructor(
                     userId = selectedUserId.value,
                     reminderMinutes = reminderMinutes.value
                 )
-            )
+            ).toInt()
+            scheduleReminder(insertedId, title.value.trim(), startMillis, reminderMinutes.value)
             onSuccess()
         }
     }
 
-    // Uppdaterar ett befintligt event
     fun updateEvent(onSuccess: () -> Unit) {
         titleError.value = null
         timeError.value = null
-
-        if (title.value.isBlank()) {
-            titleError.value = "Titel krävs"
-            return
-        }
-        if (endTime.value <= startTime.value) {
-            timeError.value = "Sluttid måste vara efter starttid"
-            return
-        }
+        if (title.value.isBlank()) { titleError.value = "Titel krävs"; return }
+        if (endTime.value <= startTime.value) { timeError.value = "Sluttid måste vara efter starttid"; return }
 
         val zone = ZoneId.systemDefault()
-        val startMillis = selectedDate.value.atTime(startTime.value)
-            .atZone(zone).toInstant().toEpochMilli()
-        val endMillis = selectedDate.value.atTime(endTime.value)
-            .atZone(zone).toInstant().toEpochMilli()
+        val startMillis = selectedDate.value.atTime(startTime.value).atZone(zone).toInstant().toEpochMilli()
+        val endMillis = selectedDate.value.atTime(endTime.value).atZone(zone).toInstant().toEpochMilli()
 
         viewModelScope.launch {
             repository.updateEvent(
@@ -136,11 +116,36 @@ class EventViewModel @Inject constructor(
                     reminderMinutes = reminderMinutes.value
                 )
             )
+            cancelReminder(currentEventId)
+            scheduleReminder(currentEventId, title.value.trim(), startMillis, reminderMinutes.value)
             onSuccess()
         }
     }
 
-    // Återställer formuläret
+    // Schemalägger en WorkManager-notis innan händelsen börjar
+    private fun scheduleReminder(eventId: Int, title: String, startMillis: Long, reminderMinutes: Int) {
+        val delay = startMillis - System.currentTimeMillis() - (reminderMinutes * 60 * 1000L)
+        if (delay <= 0) return
+
+        val inputData = Data.Builder()
+            .putString("event_title", title)
+            .putInt("event_id", eventId)
+            .build()
+
+        val workRequest = OneTimeWorkRequestBuilder<ReminderWorker>()
+            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
+            .setInputData(inputData)
+            .addTag("reminder_$eventId")
+            .build()
+
+        WorkManager.getInstance(context).enqueue(workRequest)
+    }
+
+    // Avbokar notis för ett event
+    fun cancelReminder(eventId: Int) {
+        WorkManager.getInstance(context).cancelAllWorkByTag("reminder_$eventId")
+    }
+
     fun resetForm() {
         title.value = ""
         description.value = ""
