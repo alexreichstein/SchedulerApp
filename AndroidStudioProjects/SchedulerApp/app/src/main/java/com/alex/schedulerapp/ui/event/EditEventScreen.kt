@@ -1,5 +1,6 @@
 package com.alex.schedulerapp.ui.event
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,7 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditEventScreen(
     eventId: Int,
@@ -18,6 +19,8 @@ fun EditEventScreen(
     viewModel: EventViewModel = hiltViewModel()
 ) {
     val allUsers by viewModel.allUsers.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState()
+    val selectedCategoryId by viewModel.selectedCategoryId.collectAsState()
     val title by viewModel.title.collectAsState()
     val description by viewModel.description.collectAsState()
     val selectedUserId by viewModel.selectedUserId.collectAsState()
@@ -90,6 +93,30 @@ fun EditEventScreen(
                         selected = user.id == selectedUserId,
                         onClick = { viewModel.selectedUserId.value = user.id },
                         label = { Text(user.name) }
+                    )
+                }
+            }
+
+            Text("Kategori", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                allCategories.forEach { category ->
+                    FilterChip(
+                        selected = category.id == selectedCategoryId,
+                        onClick = {
+                            viewModel.selectedCategoryId.value =
+                                if (category.id == selectedCategoryId) null else category.id
+                        },
+                        label = { Text(category.name) },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        androidx.compose.ui.graphics.Color(category.color),
+                                        shape = androidx.compose.foundation.shape.CircleShape
+                                    )
+                            )
+                        }
                     )
                 }
             }
@@ -172,7 +199,6 @@ fun EditEventScreen(
         }
     }
 
-    // Starttidsväljare — 24-timmarsformat
     if (showStartTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = startTime.hour,
@@ -195,7 +221,6 @@ fun EditEventScreen(
         )
     }
 
-    // Sluttidsväljare — 24-timmarsformat
     if (showEndTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = endTime.hour,

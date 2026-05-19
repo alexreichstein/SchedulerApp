@@ -7,6 +7,7 @@ import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.alex.schedulerapp.ReminderWorker
+import com.alex.schedulerapp.data.local.entity.Category
 import com.alex.schedulerapp.data.local.entity.Event
 import com.alex.schedulerapp.data.local.entity.User
 import com.alex.schedulerapp.data.repository.EventRepository
@@ -32,6 +33,7 @@ class EventViewModel @Inject constructor(
     val title = MutableStateFlow("")
     val description = MutableStateFlow("")
     val selectedUserId = MutableStateFlow(1)
+    val selectedCategoryId = MutableStateFlow<Int?>(null)
     val selectedDate = MutableStateFlow(LocalDate.now())
     val startTime = MutableStateFlow(LocalTime.of(8, 0))
     val endTime = MutableStateFlow(LocalTime.of(9, 0))
@@ -47,6 +49,13 @@ class EventViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
+    val allCategories: StateFlow<List<Category>> = repository.getAllCategories()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     fun loadEvent(event: Event) {
         val zone = ZoneId.systemDefault()
         val start = java.time.Instant.ofEpochMilli(event.startTime).atZone(zone)
@@ -54,6 +63,7 @@ class EventViewModel @Inject constructor(
         title.value = event.title
         description.value = event.description
         selectedUserId.value = event.userId
+        selectedCategoryId.value = event.categoryId
         selectedDate.value = start.toLocalDate()
         startTime.value = start.toLocalTime()
         endTime.value = end.toLocalTime()
@@ -86,6 +96,7 @@ class EventViewModel @Inject constructor(
                     startTime = startMillis,
                     endTime = endMillis,
                     userId = selectedUserId.value,
+                    categoryId = selectedCategoryId.value,
                     reminderMinutes = reminderMinutes.value
                 )
             ).toInt()
@@ -113,6 +124,7 @@ class EventViewModel @Inject constructor(
                     startTime = startMillis,
                     endTime = endMillis,
                     userId = selectedUserId.value,
+                    categoryId = selectedCategoryId.value,
                     reminderMinutes = reminderMinutes.value
                 )
             )
@@ -122,7 +134,6 @@ class EventViewModel @Inject constructor(
         }
     }
 
-    // Schemalägger en WorkManager-notis innan händelsen börjar
     private fun scheduleReminder(eventId: Int, title: String, startMillis: Long, reminderMinutes: Int) {
         val delay = startMillis - System.currentTimeMillis() - (reminderMinutes * 60 * 1000L)
         if (delay <= 0) return
@@ -141,7 +152,6 @@ class EventViewModel @Inject constructor(
         WorkManager.getInstance(context).enqueue(workRequest)
     }
 
-    // Avbokar notis för ett event
     fun cancelReminder(eventId: Int) {
         WorkManager.getInstance(context).cancelAllWorkByTag("reminder_$eventId")
     }
@@ -150,6 +160,7 @@ class EventViewModel @Inject constructor(
         title.value = ""
         description.value = ""
         selectedUserId.value = 1
+        selectedCategoryId.value = null
         selectedDate.value = LocalDate.now()
         startTime.value = LocalTime.of(8, 0)
         endTime.value = LocalTime.of(9, 0)

@@ -11,5 +11,6 @@ data class Event(
     val startTime: Long,
     val endTime: Long,
     val userId: Int,
+    val categoryId: Int? = null,
     val reminderMinutes: Int = 15
 )
