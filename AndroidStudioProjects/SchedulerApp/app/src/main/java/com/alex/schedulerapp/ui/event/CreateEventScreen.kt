@@ -16,7 +16,6 @@ fun CreateEventScreen(
     onNavigateBack: () -> Unit,
     viewModel: EventViewModel = hiltViewModel()
 ) {
-    // Återställ formuläret när skärmen öppnas
     LaunchedEffect(Unit) { viewModel.resetForm() }
 
     val title by viewModel.title.collectAsState()
@@ -30,7 +29,6 @@ fun CreateEventScreen(
     val timeError by viewModel.timeError.collectAsState()
     val allUsers by viewModel.allUsers.collectAsState()
 
-    // Styr synlighet för datum- och tidväljare
     var showDatePicker by remember { mutableStateOf(false) }
     var showStartTimePicker by remember { mutableStateOf(false) }
     var showEndTimePicker by remember { mutableStateOf(false) }
@@ -64,7 +62,6 @@ fun CreateEventScreen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Titelfält
             OutlinedTextField(
                 value = title,
                 onValueChange = { viewModel.title.value = it },
@@ -75,7 +72,6 @@ fun CreateEventScreen(
                 singleLine = true
             )
 
-            // Beskrivningsfält
             OutlinedTextField(
                 value = description,
                 onValueChange = { viewModel.description.value = it },
@@ -84,7 +80,6 @@ fun CreateEventScreen(
                 minLines = 2
             )
 
-            // Välj användare
             Text("Användare", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 allUsers.forEach { user ->
@@ -96,7 +91,6 @@ fun CreateEventScreen(
                 }
             }
 
-            // Datumväljare
             OutlinedCard(
                 onClick = { showDatePicker = true },
                 modifier = Modifier.fillMaxWidth()
@@ -107,7 +101,6 @@ fun CreateEventScreen(
                 )
             }
 
-            // Tidväljare
             timeError?.let {
                 Text(it, color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
@@ -136,7 +129,6 @@ fun CreateEventScreen(
                 }
             }
 
-            // Påminnelse
             Text("Påminnelse", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(5, 15, 30, 60).forEach { minutes ->
@@ -152,7 +144,6 @@ fun CreateEventScreen(
         }
     }
 
-    // Datumväljardialog
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = selectedDate
@@ -178,11 +169,12 @@ fun CreateEventScreen(
         }
     }
 
-    // Starttidsväljare
+    // Starttidsväljare — 24-timmarsformat
     if (showStartTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = startTime.hour,
-            initialMinute = startTime.minute
+            initialMinute = startTime.minute,
+            is24Hour = true
         )
         AlertDialog(
             onDismissRequest = { showStartTimePicker = false },
@@ -200,11 +192,12 @@ fun CreateEventScreen(
         )
     }
 
-    // Sluttidsväljare
+    // Sluttidsväljare — 24-timmarsformat
     if (showEndTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = endTime.hour,
-            initialMinute = endTime.minute
+            initialMinute = endTime.minute,
+            is24Hour = true
         )
         AlertDialog(
             onDismissRequest = { showEndTimePicker = false },

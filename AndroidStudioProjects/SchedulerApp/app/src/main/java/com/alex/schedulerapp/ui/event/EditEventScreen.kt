@@ -28,7 +28,6 @@ fun EditEventScreen(
     val titleError by viewModel.titleError.collectAsState()
     val timeError by viewModel.timeError.collectAsState()
 
-    // Laddar händelsen från databasen när skärmen öppnas
     LaunchedEffect(eventId) {
         viewModel.loadEventById(eventId)
     }
@@ -173,10 +172,12 @@ fun EditEventScreen(
         }
     }
 
+    // Starttidsväljare — 24-timmarsformat
     if (showStartTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = startTime.hour,
-            initialMinute = startTime.minute
+            initialMinute = startTime.minute,
+            is24Hour = true
         )
         AlertDialog(
             onDismissRequest = { showStartTimePicker = false },
@@ -194,10 +195,12 @@ fun EditEventScreen(
         )
     }
 
+    // Sluttidsväljare — 24-timmarsformat
     if (showEndTimePicker) {
         val timePickerState = rememberTimePickerState(
             initialHour = endTime.hour,
-            initialMinute = endTime.minute
+            initialMinute = endTime.minute,
+            is24Hour = true
         )
         AlertDialog(
             onDismissRequest = { showEndTimePicker = false },
