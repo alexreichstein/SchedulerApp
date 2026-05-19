@@ -1,5 +1,6 @@
 package com.alex.schedulerapp.ui.calendar
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -25,15 +27,23 @@ import java.util.Locale
 fun CalendarScreen(
     onCreateEvent: () -> Unit = {},
     onEditEvent: (Int) -> Unit = {},
-    // hiltViewModel() hämtar automatiskt vår ViewModel via Hilt
     viewModel: CalendarViewModel = hiltViewModel()
 ) {
-    // collectAsState() lyssnar på StateFlow och uppdaterar UI automatiskt
     val currentMonth by viewModel.currentMonth.collectAsState()
     val selectedDate by viewModel.selectedDate.collectAsState()
     val allEvents by viewModel.allEvents.collectAsState()
     val allUsers by viewModel.allUsers.collectAsState()
     val activeUserId by viewModel.activeUserId.collectAsState()
+
+    // Känner av om enheten är i landscape-läge
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val eventsForSelectedDay = allEvents.filter {
+        val eventDate = java.time.Instant.ofEpochMilli(it.startTime)
+            .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        eventDate == selectedDate
+    }
 
     Scaffold(
         topBar = {
@@ -45,7 +55,6 @@ fun CalendarScreen(
                     )
                 },
                 actions = {
-                    // Användarbytare — visar en knapp per användare
                     allUsers.forEach { user ->
                         val isActive = user.id == activeUserId
                         TextButton(
@@ -66,38 +75,56 @@ fun CalendarScreen(
                             )
                         }
                     }
-                    // Navigationsknappar för månader
                     TextButton(onClick = { viewModel.previousMonth() }) { Text("‹") }
                     TextButton(onClick = { viewModel.nextMonth() }) { Text("›") }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onCreateEvent) {
-                Text("+")
-            }
+            FloatingActionButton(onClick = onCreateEvent) { Text("+") }
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.padding(innerPadding)) {
-            WeekDayHeaders()
-            MonthGrid(
-                yearMonth = currentMonth,
-                selectedDate = selectedDate,
-                events = allEvents,
-                onDayClick = { viewModel.selectDate(it) }
-            )
-            // Visar händelser för vald dag
-            SelectedDayEvents(
-                date = selectedDate,
-                events = allEvents.filter {
-                    val eventDate = java.time.Instant.ofEpochMilli(it.startTime)
-                        .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-                    eventDate == selectedDate
-                },
-                users = allUsers,
-                onEditEvent = onEditEvent,
-                onDeleteEvent = { viewModel.deleteEvent(it) }
-            )
+        if (isLandscape) {
+            // Landscape: kalender till vänster, händelser till höger
+            Row(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    WeekDayHeaders()
+                    MonthGrid(
+                        yearMonth = currentMonth,
+                        selectedDate = selectedDate,
+                        events = allEvents,
+                        onDayClick = { viewModel.selectDate(it) }
+                    )
+                }
+                VerticalDivider(modifier = Modifier.fillMaxHeight())
+                Column(modifier = Modifier.weight(1f)) {
+                    SelectedDayEvents(
+                        date = selectedDate,
+                        events = eventsForSelectedDay,
+                        users = allUsers,
+                        onEditEvent = onEditEvent,
+                        onDeleteEvent = { viewModel.deleteEvent(it) }
+                    )
+                }
+            }
+        } else {
+            // Portrait: kalender ovanpå, händelser nedanför
+            Column(modifier = Modifier.padding(innerPadding)) {
+                WeekDayHeaders()
+                MonthGrid(
+                    yearMonth = currentMonth,
+                    selectedDate = selectedDate,
+                    events = allEvents,
+                    onDayClick = { viewModel.selectDate(it) }
+                )
+                SelectedDayEvents(
+                    date = selectedDate,
+                    events = eventsForSelectedDay,
+                    users = allUsers,
+                    onEditEvent = onEditEvent,
+                    onDeleteEvent = { viewModel.deleteEvent(it) }
+                )
+            }
         }
     }
 }
@@ -132,16 +159,13 @@ fun MonthGrid(
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(7),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(320.dp),
+        modifier = Modifier.fillMaxWidth().height(320.dp),
         contentPadding = PaddingValues(4.dp)
     ) {
         items(dayItems) { date ->
             if (date == null) {
                 Box(modifier = Modifier.size(48.dp))
             } else {
-                // Räknar händelser på denna dag
                 val hasEvents = events.any {
                     val eventDate = java.time.Instant.ofEpochMilli(it.startTime)
                         .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
@@ -191,7 +215,6 @@ fun DayCell(
                 color = textColor,
                 style = MaterialTheme.typography.bodyMedium
             )
-            // Liten prick om det finns händelser på dagen
             if (hasEvents) {
                 Box(
                     modifier = Modifier
@@ -264,7 +287,6 @@ fun EventCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Färgad linje för användarens färg
             Box(
                 modifier = Modifier
                     .width(4.dp)
@@ -273,10 +295,7 @@ fun EventCard(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = event.title,
-                    style = MaterialTheme.typography.bodyLarge
-                )
+                Text(text = event.title, style = MaterialTheme.typography.bodyLarge)
                 user?.let {
                     Text(
                         text = it.name,
@@ -285,7 +304,6 @@ fun EventCard(
                     )
                 }
             }
-            // Radera-knapp
             TextButton(onClick = onDelete) {
                 Text("✕", color = MaterialTheme.colorScheme.error)
             }
