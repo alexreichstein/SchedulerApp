@@ -1,5 +1,6 @@
 package com.alex.schedulerapp.ui
 
+import com.alex.schedulerapp.ui.event.EditEventScreen
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -39,8 +40,12 @@ fun SchedulerNavHost(
             )
         }
 
-        composable(Screen.EditEvent.route) {
-            androidx.compose.material3.Text("Redigera händelse kommer här")
+        composable(Screen.EditEvent.route) { backStackEntry ->
+            val eventId = backStackEntry.arguments?.getString("eventId")?.toIntOrNull() ?: return@composable
+            EditEventScreen(
+                eventId = eventId,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }

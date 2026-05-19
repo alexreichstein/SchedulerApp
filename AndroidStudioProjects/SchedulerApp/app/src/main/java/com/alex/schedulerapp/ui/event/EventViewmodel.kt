@@ -34,6 +34,9 @@ class EventViewModel @Inject constructor(
     val titleError = MutableStateFlow<String?>(null)
     val timeError = MutableStateFlow<String?>(null)
 
+    // Håller koll på vilket event vi redigerar
+    private var currentEventId: Int = 0
+
     // Alla användare för att visa i formuläret
     val allUsers: StateFlow<List<User>> = repository.getAllUsers()
         .stateIn(
@@ -45,10 +48,8 @@ class EventViewModel @Inject constructor(
     // Fyller i formuläret med en befintlig händelse (för redigering)
     fun loadEvent(event: Event) {
         val zone = ZoneId.systemDefault()
-        val start = java.time.Instant.ofEpochMilli(event.startTime)
-            .atZone(zone)
-        val end = java.time.Instant.ofEpochMilli(event.endTime)
-            .atZone(zone)
+        val start = java.time.Instant.ofEpochMilli(event.startTime).atZone(zone)
+        val end = java.time.Instant.ofEpochMilli(event.endTime).atZone(zone)
 
         title.value = event.title
         description.value = event.description
@@ -59,12 +60,20 @@ class EventViewModel @Inject constructor(
         reminderMinutes.value = event.reminderMinutes
     }
 
-    // Validerar och sparar händelsen
+    // Laddar ett event från databasen via id
+    fun loadEventById(eventId: Int) {
+        viewModelScope.launch {
+            val event = repository.getEventById(eventId) ?: return@launch
+            currentEventId = event.id
+            loadEvent(event)
+        }
+    }
+
+    // Validerar och sparar ny händelse
     fun saveEvent(onSuccess: () -> Unit) {
         titleError.value = null
         timeError.value = null
 
-        // Validering
         if (title.value.isBlank()) {
             titleError.value = "Titel krävs"
             return
@@ -95,6 +104,42 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    // Uppdaterar ett befintligt event
+    fun updateEvent(onSuccess: () -> Unit) {
+        titleError.value = null
+        timeError.value = null
+
+        if (title.value.isBlank()) {
+            titleError.value = "Titel krävs"
+            return
+        }
+        if (endTime.value <= startTime.value) {
+            timeError.value = "Sluttid måste vara efter starttid"
+            return
+        }
+
+        val zone = ZoneId.systemDefault()
+        val startMillis = selectedDate.value.atTime(startTime.value)
+            .atZone(zone).toInstant().toEpochMilli()
+        val endMillis = selectedDate.value.atTime(endTime.value)
+            .atZone(zone).toInstant().toEpochMilli()
+
+        viewModelScope.launch {
+            repository.updateEvent(
+                Event(
+                    id = currentEventId,
+                    title = title.value.trim(),
+                    description = description.value.trim(),
+                    startTime = startMillis,
+                    endTime = endMillis,
+                    userId = selectedUserId.value,
+                    reminderMinutes = reminderMinutes.value
+                )
+            )
+            onSuccess()
+        }
+    }
+
     // Återställer formuläret
     fun resetForm() {
         title.value = ""
@@ -106,5 +151,6 @@ class EventViewModel @Inject constructor(
         reminderMinutes.value = 15
         titleError.value = null
         timeError.value = null
+        currentEventId = 0
     }
 }
