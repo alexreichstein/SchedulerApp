@@ -1,28 +1,23 @@
 // Kalenderkomponent som visar ett månadsrutnät
-// Tar upp hela skärmen och visar händelser som färgade streck i dagrutan
-// Användaren trycker på en dag för att se händelserna för den dagen
+// Tar upp hela skärmen och visar händelser som färgade block med titel i dagrutan
+// Vänster halva = användarens färg, höger halva = aktivitetens färg
+// Swipe vänster = nästa månad, swipe höger = föregående månad
 
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, PanResponder } from 'react-native';
 import { Event } from '../types';
 import { COLORS, DAYS } from '../constants';
 
-// Skärmens bredd används för att beräkna cellstorlek
 const SCREEN_WIDTH = Dimensions.get('window').width;
-
-// Varje dag tar upp 1/7 av skärmbredden
 const CELL_WIDTH = SCREEN_WIDTH / 7;
+const CELL_HEIGHT = CELL_WIDTH * 1.6;
 
-// Cellhöjd — tillräckligt hög för att visa 2-3 streck per dag
-const CELL_HEIGHT = CELL_WIDTH * 1.4;
-
-// Props som komponenten tar emot från föräldrakomponenten
 type Props = {
-  events: Event[];                        // Alla händelser
-  selectedDate: Date;                     // Vald dag
-  onSelectDate: (date: Date) => void;     // Callback när användaren trycker på en dag
-  currentMonth: Date;                     // Vilken månad som visas
-  onPrevMonth: () => void;               // Callback för föregående månad
-  onNextMonth: () => void;               // Callback för nästa månad
+  events: Event[];
+  selectedDate: Date;
+  onSelectDate: (date: Date) => void;
+  currentMonth: Date;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
 };
 
 export default function CalendarView({
@@ -35,32 +30,42 @@ export default function CalendarView({
 }: Props) {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
-
-  // Första dagen i månaden
   const firstDay = new Date(year, month, 1);
-
-  // Sista dagen i månaden
   const lastDay = new Date(year, month + 1, 0);
 
-  // Beräknar var första dagen ska placeras i rutnätet
-  // Justerar från Sunday=0 till Monday=0 enligt svensk standard
   let startDow = firstDay.getDay() - 1;
   if (startDow < 0) startDow = 6;
 
-  // Bygger en array med null för tomma celler och Date för varje dag
   const days: (Date | null)[] = [];
   for (let i = 0; i < startDow; i++) days.push(null);
   for (let i = 1; i <= lastDay.getDate(); i++) {
     days.push(new Date(year, month, i));
   }
 
-  // Formaterar månadsnamnet med stor bokstav, t.ex. "Maj 2026"
   const monthName = currentMonth.toLocaleDateString('sv-SE', {
     month: 'long',
     year: 'numeric',
   });
 
-  // Hämtar alla händelser för en specifik dag
+  // Hanterar swipe-gester för att byta månad
+  // Svep vänster = nästa månad, svep höger = föregående månad
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, gestureState) => {
+      return (
+        Math.abs(gestureState.dx) > Math.abs(gestureState.dy) &&
+        Math.abs(gestureState.dx) > 20
+      );
+    },
+    onPanResponderRelease: (_, gestureState) => {
+      if (gestureState.dx < -50) {
+        onNextMonth();
+      } else if (gestureState.dx > 50) {
+        onPrevMonth();
+      }
+    },
+  });
+
   const getEventsForDate = (date: Date) =>
     events.filter((e) => {
       const d = new Date(e.startTime);
@@ -71,13 +76,11 @@ export default function CalendarView({
       );
     });
 
-  // Kontrollerar om en dag är den valda dagen
   const isSelected = (date: Date) =>
     date.getFullYear() === selectedDate.getFullYear() &&
     date.getMonth() === selectedDate.getMonth() &&
     date.getDate() === selectedDate.getDate();
 
-  // Kontrollerar om en dag är dagens datum
   const isToday = (date: Date) => {
     const t = new Date();
     return (
@@ -87,7 +90,6 @@ export default function CalendarView({
     );
   };
 
-  // Beräknar veckonummer enligt ISO 8601 (svensk standard)
   const getWeekNumber = (date: Date) => {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
@@ -104,7 +106,6 @@ export default function CalendarView({
     );
   };
 
-  // Bygger en array med veckonummer för varje rad i kalendern
   const weeks: number[] = [];
   days.forEach((date, index) => {
     if (index % 7 === 0 && date) {
@@ -115,8 +116,7 @@ export default function CalendarView({
   });
 
   return (
-    <View style={styles.container}>
-      {/* Månadsnavigation med pilar och månadsnamn */}
+    <View style={styles.container} {...panResponder.panHandlers}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onPrevMonth} style={styles.navBtn}>
           <Text style={styles.navText}>‹</Text>
@@ -127,29 +127,22 @@ export default function CalendarView({
         </TouchableOpacity>
       </View>
 
-      {/* Rad med veckodagsnamn och en tom cell för veckonummer */}
       <View style={styles.weekDayRow}>
-        {/* Tom cell för veckonummerkolumnen */}
         <View style={styles.weekNumHeader} />
         {DAYS.map((d) => (
-          <Text key={d} style={styles.dayLabel}>
-            {d}
-          </Text>
+          <Text key={d} style={styles.dayLabel}>{d}</Text>
         ))}
       </View>
 
-      {/* Kalenderrutnät med veckonummer och dagar */}
       <View style={styles.grid}>
         {Array.from({ length: Math.ceil(days.length / 7) }).map((_, rowIndex) => (
           <View key={rowIndex} style={styles.row}>
-            {/* Veckonummer till vänster om varje rad */}
             <View style={styles.weekNumCell}>
               <Text style={styles.weekNum}>
                 {weeks[rowIndex] > 0 ? weeks[rowIndex] : ''}
               </Text>
             </View>
 
-            {/* Sju dagceller per rad */}
             {days.slice(rowIndex * 7, rowIndex * 7 + 7).map((date, colIndex) => {
               const dayEvents = date ? getEventsForDate(date) : [];
               const selected = date ? isSelected(date) : false;
@@ -168,33 +161,35 @@ export default function CalendarView({
                 >
                   {date && (
                     <>
-                      {/* Datumnummer */}
-                      <Text
-                        style={[
-                          styles.dayNum,
-                          selected && styles.selectedDayNum,
-                          today && !selected && styles.todayNum,
-                        ]}
-                      >
+                      <Text style={[
+                        styles.dayNum,
+                        selected && styles.selectedDayNum,
+                        today && !selected && styles.todayNum,
+                      ]}>
                         {date.getDate()}
                       </Text>
 
-                      {/* Färgade streck för händelser — max 3 visas */}
-                      <View style={styles.eventStripes}>
-                        {dayEvents.slice(0, 3).map((event) => (
-                          <View
-                            key={event.id}
-                            style={[
-                              styles.stripe,
-                              {
-                                backgroundColor:
-                                  event.templateColor ??
-                                  COLORS[event.userId] ??
-                                  '#ccc',
-                              },
-                            ]}
-                          />
-                        ))}
+                      <View style={styles.eventBlocks}>
+                        {dayEvents.slice(0, 2).map((event) => {
+                          const userColor = COLORS[event.userId] ?? '#ccc';
+                          const activityColor = event.templateColor ?? userColor;
+
+                          return (
+                            <View key={event.id} style={styles.eventBlock}>
+                              {/* Vänster halva — användarens färg */}
+                              <View style={[styles.eventBlockLeft, { backgroundColor: userColor }]} />
+                              {/* Höger halva — aktivitetens färg */}
+                              <View style={[styles.eventBlockRight, { backgroundColor: activityColor }]} />
+                              {/* Titel centrerad över blocket */}
+                              <Text style={styles.eventBlockText} numberOfLines={1}>
+                                {event.title}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                        {dayEvents.length > 2 && (
+                          <Text style={styles.moreEvents}>+{dayEvents.length - 2}</Text>
+                        )}
                       </View>
                     </>
                   )}
@@ -209,12 +204,10 @@ export default function CalendarView({
 }
 
 const styles = StyleSheet.create({
-  // Hela kalendern fyller tillgängligt utrymme
   container: {
     flex: 1,
     backgroundColor: '#fff',
   },
-  // Header med månadsnavigation
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -234,14 +227,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'capitalize',
   },
-  // Rad med veckodagsnamn
   weekDayRow: {
     flexDirection: 'row',
     paddingBottom: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  // Tom cell för veckonummerkolumnen i header
   weekNumHeader: {
     width: 28,
   },
@@ -252,17 +243,14 @@ const styles = StyleSheet.create({
     color: '#999',
     fontWeight: '600',
   },
-  // Rutnätet med alla rader
   grid: {
     flex: 1,
   },
-  // En rad med 7 dagar
   row: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  // Cell för veckonummer
   weekNumCell: {
     width: 28,
     justifyContent: 'flex-start',
@@ -274,7 +262,6 @@ const styles = StyleSheet.create({
     color: '#bbb',
     fontWeight: '600',
   },
-  // Dagcell
   cell: {
     flex: 1,
     minHeight: CELL_HEIGHT,
@@ -282,16 +269,13 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: '#f0f0f0',
   },
-  // Vald dag — lila bakgrund
   selectedCell: {
     backgroundColor: '#ede7f6',
   },
-  // Dagens datum — lila kantlinje
   todayCell: {
     borderWidth: 1,
     borderColor: '#6200ee',
   },
-  // Datumnummer
   dayNum: {
     fontSize: 13,
     color: '#1a1a1a',
@@ -307,14 +291,42 @@ const styles = StyleSheet.create({
     color: '#6200ee',
     fontWeight: '700',
   },
-  // Container för händelsestreck
-  eventStripes: {
+  eventBlocks: {
     gap: 1,
   },
-  // Färgat streck för en händelse
-  stripe: {
-    height: 4,
-    borderRadius: 2,
+  eventBlock: {
+    height: 14,
+    borderRadius: 3,
+    overflow: 'hidden',
+    flexDirection: 'row',
     marginHorizontal: 1,
+    position: 'relative',
+  },
+  eventBlockLeft: {
+    flex: 1,
+  },
+  eventBlockRight: {
+    flex: 1,
+  },
+  eventBlockText: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    fontSize: 8,
+    color: '#fff',
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 14,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+  },
+  moreEvents: {
+    fontSize: 9,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 1,
   },
 });

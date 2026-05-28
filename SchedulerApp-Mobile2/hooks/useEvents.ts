@@ -49,11 +49,12 @@ export function useEvents() {
     return () => unsubscribe();
   }, []);
 
-  // Skapar en ny händelse i Firestore
-  // Tar emot alla fält utom id som genereras automatiskt av Firestore
-  const addEvent = async (event: Omit<Event, 'id'>) => {
-    await addDoc(collection(db, ...EVENTS_PATH), event);
-  };
+ // Skapar en ny händelse i Firestore och returnerar det nya dokumentets ID
+// ID:t används för att schemalägga notiser
+const addEvent = async (event: Omit<Event, 'id'>): Promise<string> => {
+  const docRef = await addDoc(collection(db, ...EVENTS_PATH), event);
+  return docRef.id;
+};
 
   // Raderar en händelse från Firestore baserat på id
   const deleteEvent = async (id: string) => {

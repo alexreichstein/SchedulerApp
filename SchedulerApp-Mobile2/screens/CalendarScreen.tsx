@@ -2,6 +2,7 @@
 // Kalendern tar upp hela skärmen
 // Händelser för vald dag visas i en modal när man trycker på dagen
 // Väder för vald dag hämtas från Open-Meteo
+// Notiser schemaläggs när en händelse sparas
 
 import { useState, useEffect } from 'react';
 import {
@@ -20,6 +21,7 @@ import type { RootStackParamList } from '../navigation';
 import { useEvents } from '../hooks/useEvents';
 import { useTemplates } from '../hooks/useTemplates';
 import { useWeather, weatherEmoji, weatherDescription } from '../hooks/useWeather';
+import { useNotifications } from '../hooks/useNotifications';
 import CalendarView from '../components/CalendarView';
 import EventCard from '../components/EventCard';
 import AddEventModal from '../components/AddEventModal';
@@ -30,6 +32,7 @@ export default function CalendarScreen() {
   const { events, loading, addEvent, deleteEvent } = useEvents();
   const { templates } = useTemplates();
   const { fetchWeather } = useWeather();
+  const { scheduleReminder, cancelReminder } = useNotifications();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [activeUserId, setActiveUserId] = useState(1);
@@ -71,6 +74,7 @@ export default function CalendarScreen() {
     );
   });
 
+  // Sparar händelse och schemalägger notis
   const handleSave = async (data: {
     title: string;
     description: string;
@@ -79,21 +83,29 @@ export default function CalendarScreen() {
     userId: number;
     templateColor: string | null;
   }) => {
-    await addEvent({
+    const id = await addEvent({
       ...data,
       categoryId: null,
       reminderMinutes: 15,
     });
+    // Schemalägger påminnelse 15 minuter innan händelsen
+    if (id) {
+      await scheduleReminder(id, data.title, data.startTime, 15);
+    }
     setShowAddModal(false);
   };
 
+  // Raderar händelse och avbryter notis
   const handleDelete = (id: string) => {
     Alert.alert('Ta bort?', 'Vill du ta bort denna händelse?', [
       { text: 'Avbryt', style: 'cancel' },
       {
         text: 'Ta bort',
         style: 'destructive',
-        onPress: () => deleteEvent(id),
+        onPress: async () => {
+          await cancelReminder(id);
+          deleteEvent(id);
+        },
       },
     ]);
   };
@@ -169,7 +181,6 @@ export default function CalendarScreen() {
         >
           <TouchableOpacity activeOpacity={1} onPress={() => {}}>
             <View style={styles.dayModal}>
-              {/* Header med datum och stängknapp */}
               <View style={styles.dayModalHeader}>
                 <Text style={styles.dayModalTitle}>
                   {selectedDate.toLocaleDateString('sv-SE', {
@@ -321,7 +332,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    maxHeight: '200%',
+    maxHeight: '80%',
   },
   dayModalHeader: {
     flexDirection: 'row',
@@ -340,7 +351,6 @@ const styles = StyleSheet.create({
     color: '#888',
     padding: 4,
   },
-  // Väderrad
   weatherRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -350,22 +360,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 12,
   },
-  weatherEmoji: {
-    fontSize: 24,
-  },
-  weatherTemp: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  weatherDesc: {
-    fontSize: 14,
-    color: '#666',
-  },
-  weatherLoading: {
-    fontSize: 13,
-    color: '#aaa',
-  },
+  weatherEmoji: { fontSize: 24 },
+  weatherTemp: { fontSize: 18, fontWeight: '700', color: '#1a1a1a' },
+  weatherDesc: { fontSize: 14, color: '#666' },
+  weatherLoading: { fontSize: 13, color: '#aaa' },
   empty: {
     textAlign: 'center',
     marginTop: 20,
