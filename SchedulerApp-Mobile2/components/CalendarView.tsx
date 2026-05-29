@@ -3,13 +3,18 @@
 // Vänster halva = användarens färg, höger halva = aktivitetens färg
 // Swipe vänster = nästa månad, swipe höger = föregående månad
 
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, PanResponder } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, PanResponder, ScrollView } from 'react-native';
 import { Event } from '../types';
 import { COLORS, DAYS } from '../constants';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CELL_WIDTH = SCREEN_WIDTH / 7;
-const CELL_HEIGHT = CELL_WIDTH * 1.6;
+
+const DAY_NUM_HEIGHT = 18;
+const EVENT_HEIGHT = 14;
+const EVENT_GAP = 1;
+const CELL_PADDING = 4;
+const MIN_CELL_HEIGHT = CELL_WIDTH * 1.2;
 
 type Props = {
   events: Event[];
@@ -47,8 +52,6 @@ export default function CalendarView({
     year: 'numeric',
   });
 
-  // Hanterar swipe-gester för att byta månad
-  // Svep vänster = nästa månad, svep höger = föregående månad
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, gestureState) => {
@@ -58,11 +61,8 @@ export default function CalendarView({
       );
     },
     onPanResponderRelease: (_, gestureState) => {
-      if (gestureState.dx < -50) {
-        onNextMonth();
-      } else if (gestureState.dx > 50) {
-        onPrevMonth();
-      }
+      if (gestureState.dx < -50) onNextMonth();
+      else if (gestureState.dx > 50) onPrevMonth();
     },
   });
 
@@ -75,6 +75,17 @@ export default function CalendarView({
         d.getDate() === date.getDate()
       );
     });
+
+  // Räkna max antal händelser för någon dag i månaden → bestämmer cellhöjden
+  const maxEventsInMonth = Math.max(
+    1,
+    ...days.map((date) => (date ? getEventsForDate(date).length : 0))
+  );
+
+  const cellHeight = Math.max(
+    MIN_CELL_HEIGHT,
+    CELL_PADDING + DAY_NUM_HEIGHT + maxEventsInMonth * (EVENT_HEIGHT + EVENT_GAP) + CELL_PADDING
+  );
 
   const isSelected = (date: Date) =>
     date.getFullYear() === selectedDate.getFullYear() &&
@@ -108,11 +119,8 @@ export default function CalendarView({
 
   const weeks: number[] = [];
   days.forEach((date, index) => {
-    if (index % 7 === 0 && date) {
-      weeks.push(getWeekNumber(date));
-    } else if (index % 7 === 0) {
-      weeks.push(0);
-    }
+    if (index % 7 === 0 && date) weeks.push(getWeekNumber(date));
+    else if (index % 7 === 0) weeks.push(0);
   });
 
   return (
@@ -134,71 +142,68 @@ export default function CalendarView({
         ))}
       </View>
 
-      <View style={styles.grid}>
-        {Array.from({ length: Math.ceil(days.length / 7) }).map((_, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            <View style={styles.weekNumCell}>
-              <Text style={styles.weekNum}>
-                {weeks[rowIndex] > 0 ? weeks[rowIndex] : ''}
-              </Text>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.grid}>
+          {Array.from({ length: Math.ceil(days.length / 7) }).map((_, rowIndex) => (
+            <View key={rowIndex} style={[styles.row, { height: cellHeight }]}>
+              <View style={styles.weekNumCell}>
+                <Text style={styles.weekNum}>
+                  {weeks[rowIndex] > 0 ? weeks[rowIndex] : ''}
+                </Text>
+              </View>
+
+              {days.slice(rowIndex * 7, rowIndex * 7 + 7).map((date, colIndex) => {
+                const dayEvents = date ? getEventsForDate(date) : [];
+                const selected = date ? isSelected(date) : false;
+                const today = date ? isToday(date) : false;
+
+                return (
+                  <TouchableOpacity
+                    key={colIndex}
+                    style={[
+                      styles.cell,
+                      { height: cellHeight },
+                      selected && styles.selectedCell,
+                      today && !selected && styles.todayCell,
+                    ]}
+                    onPress={() => date && onSelectDate(date)}
+                    disabled={!date}
+                  >
+                    {date && (
+                      <>
+                        <Text style={[
+                          styles.dayNum,
+                          selected && styles.selectedDayNum,
+                          today && !selected && styles.todayNum,
+                        ]}>
+                          {date.getDate()}
+                        </Text>
+
+                        <View style={styles.eventBlocks}>
+                          {dayEvents.map((event) => {
+                            const userColor = COLORS[event.userId] ?? '#ccc';
+                            const activityColor = event.templateColor ?? userColor;
+
+                            return (
+                              <View key={event.id} style={styles.eventBlock}>
+                                <View style={[styles.eventBlockLeft, { backgroundColor: userColor }]} />
+                                <View style={[styles.eventBlockRight, { backgroundColor: activityColor }]} />
+                                <Text style={styles.eventBlockText} numberOfLines={1}>
+                                  {event.title}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-
-            {days.slice(rowIndex * 7, rowIndex * 7 + 7).map((date, colIndex) => {
-              const dayEvents = date ? getEventsForDate(date) : [];
-              const selected = date ? isSelected(date) : false;
-              const today = date ? isToday(date) : false;
-
-              return (
-                <TouchableOpacity
-                  key={colIndex}
-                  style={[
-                    styles.cell,
-                    selected && styles.selectedCell,
-                    today && !selected && styles.todayCell,
-                  ]}
-                  onPress={() => date && onSelectDate(date)}
-                  disabled={!date}
-                >
-                  {date && (
-                    <>
-                      <Text style={[
-                        styles.dayNum,
-                        selected && styles.selectedDayNum,
-                        today && !selected && styles.todayNum,
-                      ]}>
-                        {date.getDate()}
-                      </Text>
-
-                      <View style={styles.eventBlocks}>
-                        {dayEvents.slice(0, 2).map((event) => {
-                          const userColor = COLORS[event.userId] ?? '#ccc';
-                          const activityColor = event.templateColor ?? userColor;
-
-                          return (
-                            <View key={event.id} style={styles.eventBlock}>
-                              {/* Vänster halva — användarens färg */}
-                              <View style={[styles.eventBlockLeft, { backgroundColor: userColor }]} />
-                              {/* Höger halva — aktivitetens färg */}
-                              <View style={[styles.eventBlockRight, { backgroundColor: activityColor }]} />
-                              {/* Titel centrerad över blocket */}
-                              <Text style={styles.eventBlockText} numberOfLines={1}>
-                                {event.title}
-                              </Text>
-                            </View>
-                          );
-                        })}
-                        {dayEvents.length > 2 && (
-                          <Text style={styles.moreEvents}>+{dayEvents.length - 2}</Text>
-                        )}
-                      </View>
-                    </>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-      </View>
+          ))}
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -243,9 +248,10 @@ const styles = StyleSheet.create({
     color: '#999',
     fontWeight: '600',
   },
-  grid: {
+  scrollView: {
     flex: 1,
   },
+  grid: {},
   row: {
     flexDirection: 'row',
     borderBottomWidth: 1,
@@ -264,7 +270,6 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    minHeight: CELL_HEIGHT,
     padding: 2,
     borderLeftWidth: 1,
     borderLeftColor: '#f0f0f0',
@@ -322,11 +327,5 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.4)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 1,
-  },
-  moreEvents: {
-    fontSize: 9,
-    color: '#888',
-    textAlign: 'center',
-    marginTop: 1,
   },
 });
