@@ -4,6 +4,7 @@
 // - fixed_time: start och sluttid fylls i automatiskt från mallen
 // - duration: endast starttid väljs, sluttid räknas ut från längden
 // När existingEvent skickas med är modalen i redigeringsläge
+// Fas 3: valbar påminnelsetid per händelse
 
 import { useState, useEffect } from 'react';
 import {
@@ -31,12 +32,11 @@ type Props = {
     endTime: number;
     userId: number;
     templateColor: string | null;
+    reminderMinutes: number;  // Valbar påminnelsetid skickas nu med till CalendarScreen
   }) => void;
   templates: Template[];
   selectedDate: Date;
   activeUserId: number;
-  // Om denna prop skickas med är modalen i redigeringsläge
-  // Formuläret fylls i med händelsens befintliga data
   existingEvent?: Event | null;
 };
 
@@ -46,6 +46,16 @@ const formatDuration = (minutes: number) => {
   if (minutes % 60 === 0) return `${minutes / 60} tim`;
   return `${Math.floor(minutes / 60)} tim ${minutes % 60} min`;
 };
+
+// Tillgängliga påminnelsealternativ — visas som valbara chips
+const REMINDER_OPTIONS = [
+  { label: 'Ingen', value: 0 },
+  { label: '10 min', value: 10 },
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '1 tim', value: 60 },
+  { label: '2 tim', value: 120 },
+];
 
 export default function AddEventModal({
   visible,
@@ -60,6 +70,9 @@ export default function AddEventModal({
   const [description, setDescription] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
+
+  // Påminnelsetid i minuter — 15 min som standard
+  const [reminderMinutes, setReminderMinutes] = useState(15);
 
   // Starttid — sätts till vald dag kl 08:00 som standard
   const [startTime, setStartTime] = useState(() => {
@@ -85,9 +98,9 @@ export default function AddEventModal({
       setDescription(existingEvent.description ?? '');
       setStartTime(new Date(existingEvent.startTime));
       setEndTime(new Date(existingEvent.endTime));
+      setReminderMinutes(existingEvent.reminderMinutes ?? 15);
 
       // Försöker hitta den mall som matchar händelsens färg
-      // Om ingen matchning hittas sätts selectedTemplate till null
       const matchingTemplate = templates.find(
         (t) => t.color === existingEvent.templateColor
       ) ?? null;
@@ -103,6 +116,7 @@ export default function AddEventModal({
       setSelectedTemplate(null);
       setTitle('');
       setDescription('');
+      setReminderMinutes(15); // Återställ till 15 min som standard
     }
   }, [existingEvent, selectedDate, visible]);
 
@@ -141,17 +155,14 @@ export default function AddEventModal({
 
     // Räknar om sluttid beroende på malltyp
     if (selectedTemplate?.type === 'duration') {
-      // Fast längd — räkna om sluttid från ny starttid
       const end = new Date(combined.getTime() + (selectedTemplate.durationMinutes ?? 60) * 60 * 1000);
       setEndTime(end);
     } else if (!selectedTemplate) {
-      // Ingen mall — sluttid en timme efter ny starttid
       setEndTime(new Date(combined.getTime() + 3600000));
     }
   };
 
-  // Validerar och sparar händelsen
-  // Anropar onSave med data — föräldrakomponenten hanterar om det är create eller update
+  // Validerar och sparar händelsen med vald påminnelsetid
   const handleSave = () => {
     if (!title.trim()) { Alert.alert('Titel krävs'); return; }
     if (endTime <= startTime) { Alert.alert('Sluttid måste vara efter starttid'); return; }
@@ -163,12 +174,14 @@ export default function AddEventModal({
       endTime: endTime.getTime(),
       userId: activeUserId,
       templateColor: selectedTemplate?.color ?? null,
+      reminderMinutes, // Skickar vald påminnelsetid till CalendarScreen
     });
 
     // Återställer formuläret efter sparande
     setTitle('');
     setDescription('');
     setSelectedTemplate(null);
+    setReminderMinutes(15);
   };
 
   // Formaterar ett Date-objekt till "HH:MM"
@@ -336,6 +349,35 @@ export default function AddEventModal({
               </>
             )}
 
+            {/* ─── Påminnelseväljare ─────────────────────────────────────────── */}
+            {/* Visar valbara chips för påminnelsetid */}
+            {/* Aktivt chip får användarens/mallens färg som bakgrund */}
+            <Text style={styles.label}>Påminnelse</Text>
+            <View style={styles.reminderRow}>
+              {REMINDER_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.reminderChip,
+                    reminderMinutes === option.value && {
+                      backgroundColor: selectedTemplate?.color ?? COLORS[activeUserId],
+                      borderColor: selectedTemplate?.color ?? COLORS[activeUserId],
+                    },
+                  ]}
+                  onPress={() => setReminderMinutes(option.value)}
+                >
+                  <Text style={[
+                    styles.reminderChipText,
+                    // Vit text på aktivt chip för att synas mot färgad bakgrund
+                    reminderMinutes === option.value && { color: '#fff' },
+                  ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {/* ─── Slut påminnelseväljare ───────────────────────────────────── */}
+
             {/* Spara-knapp — färgen följer mallens färg eller aktiv användares färg */}
             <TouchableOpacity
               style={[
@@ -378,7 +420,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  // Rubrik — "Ny händelse som X" eller "Redigera händelse"
+  // Rubrik
   modalTitle: { fontSize: 18, fontWeight: '700' },
 
   // Datum under rubriken
@@ -394,7 +436,7 @@ const styles = StyleSheet.create({
   // Rad med mallchips
   templateRow: { flexDirection: 'row', gap: 8, paddingBottom: 4 },
 
-  // Enskilt mallchip — färg och bakgrund sätts dynamiskt
+  // Enskilt mallchip
   templateChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -423,7 +465,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  // Tidsvisning för fast tid — rad med start, pil och slut
+  // Tidsvisning för fast tid
   timeDisplayRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -472,7 +514,31 @@ const styles = StyleSheet.create({
     color: '#333',
   },
 
-  // Spara-knapp — färg sätts dynamiskt
+  // Rad med påminnelsechips — wrappas automatiskt om det inte får plats
+  reminderRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  // Enskilt påminnelsechip — inaktivt chip har grå kant
+  reminderChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+
+  // Text på påminnelsechip — mörkgrå som standard, vit när aktivt
+  reminderChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#555',
+  },
+
+  // Spara-knapp
   saveBtn: {
     padding: 14,
     borderRadius: 10,

@@ -4,6 +4,7 @@
 // Tryck på en dag öppnar en modal med väder och händelser för den dagen
 // Inkluderar: felhantering vid Firebase-problem, offline-cache via AsyncStorage
 // Fas 2: redigering av befintliga händelser via tryck på EventCard
+// Fas 3: valbar påminnelsetid per händelse
 
 import { useState, useEffect } from 'react';
 import {
@@ -109,7 +110,7 @@ export default function CalendarScreen() {
   });
 
   // Sparar händelse — hanterar både skapa ny och uppdatera befintlig
-  // Om editingEvent finns körs updateEvent, annars addEvent
+  // reminderMinutes kommer nu från AddEventModal istället för att vara hårdkodat till 15
   const handleSave = async (data: {
     title: string;
     description: string;
@@ -117,6 +118,7 @@ export default function CalendarScreen() {
     endTime: number;
     userId: number;
     templateColor: string | null;
+    reminderMinutes: number; // Vald påminnelsetid från AddEventModal
   }) => {
     try {
       if (editingEvent) {
@@ -124,23 +126,32 @@ export default function CalendarScreen() {
         await updateEvent(editingEvent.id, {
           ...data,
           categoryId: null,
-          reminderMinutes: 15,
+          reminderMinutes: data.reminderMinutes,
         });
 
-        // Avbryt gammal notis och schemalägg ny med uppdaterad tid och titel
+        // Avbryt alltid gammal notis vid redigering
         await cancelReminder(editingEvent.id);
-        await scheduleReminder(editingEvent.id, data.title, data.startTime, 15);
+
+        // Schemalägg ny notis bara om påminnelse valts (värde > 0 = inte "Ingen")
+        if (data.reminderMinutes > 0) {
+          await scheduleReminder(
+            editingEvent.id,
+            data.title,
+            data.startTime,
+            data.reminderMinutes
+          );
+        }
       } else {
         // Skapandeläge — skapa ny händelse i Firebase
         const id = await addEvent({
           ...data,
           categoryId: null,
-          reminderMinutes: 15,
+          reminderMinutes: data.reminderMinutes,
         });
 
-        // Schemalägg påminnelse 15 min innan den nya händelsen
-        if (id) {
-          await scheduleReminder(id, data.title, data.startTime, 15);
+        // Schemalägg notis bara om påminnelse valts och händelsen sparades
+        if (id && data.reminderMinutes > 0) {
+          await scheduleReminder(id, data.title, data.startTime, data.reminderMinutes);
         }
       }
 
