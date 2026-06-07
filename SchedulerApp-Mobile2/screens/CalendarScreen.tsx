@@ -5,6 +5,8 @@
 // Inkluderar: felhantering vid Firebase-problem, offline-cache via AsyncStorage
 // Fas 2: redigering av befintliga händelser via tryck på EventCard
 // Fas 3: valbar påminnelsetid per händelse
+// Fas 4: röda dagar, idag-knapp
+// Fas 5: haptisk feedback vid interaktioner
 
 import { useState, useEffect } from 'react';
 import {
@@ -16,74 +18,64 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context'; // Hanterar safe area (notch, statusbar)
-import { useNavigation } from '@react-navigation/native';      // Hook för navigering mellan skärmar
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '../navigation';
-import { useEvents } from '../hooks/useEvents';                          // CRUD för händelser mot Firebase
-import { useTemplates } from '../hooks/useTemplates';                    // Hämtar mallar från Firebase
-import { useWeather, weatherEmoji, weatherDescription } from '../hooks/useWeather'; // Väderdata från Open-Meteo
-import { useNotifications } from '../hooks/useNotifications';            // Lokala push-notiser via Expo
-import CalendarView from '../components/CalendarView';                   // Månadsrutnät med händelseblock
-import EventCard from '../components/EventCard';                         // Kort som visar en enskild händelse
-import AddEventModal from '../components/AddEventModal';                 // Modal för att skapa/redigera händelse
-import { USERS, COLORS } from '../constants';                            // Användarnamn och färger per användare
-import { Event } from '../types';                                        // Event-typen för editingEvent-state
+import { useEvents } from '../hooks/useEvents';
+import { useTemplates } from '../hooks/useTemplates';
+import { useWeather, weatherEmoji, weatherDescription } from '../hooks/useWeather';
+import { useNotifications } from '../hooks/useNotifications';
+import useHaptics from '../hooks/useHaptics';import CalendarView from '../components/CalendarView';
+import EventCard from '../components/EventCard';
+import AddEventModal from '../components/AddEventModal';
+import { USERS, COLORS } from '../constants';
+import { Event } from '../types';
 
 export default function CalendarScreen() {
-  // Navigation — används för att gå till Mallar-skärmen
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
 
-  // Vilken månad som visas i kalendern just nu
-  // Definieras innan useEvents så att den kan skickas med som argument
   const [currentMonth, setCurrentMonth] = useState(new Date());
-
-  // Händelser från Firebase för aktuell månad
-  // error är null om allt fungerar, annars ett felmeddelande
-  // updateEvent används vid redigering av befintlig händelse
   const { events, loading, error, addEvent, updateEvent, deleteEvent } = useEvents(currentMonth);
-
-  // Mallar från Firebase — skickas till AddEventModal för att välja förifylld mall
   const { templates } = useTemplates();
-
-  // Väder — fetchWeather tar ett Date-objekt och returnerar temperatur + väderkod
   const { fetchWeather } = useWeather();
-
-  // Notiser — scheduleReminder skapar en lokal notis, cancelReminder tar bort den
   const { scheduleReminder, cancelReminder } = useNotifications();
 
-  // Vilken dag användaren har tryckt på — markeras i kalendern och visas i dagmodalen
+  // Haptisk feedback — olika nivåer för olika interaktioner
+  const { lightTap, mediumTap, heavyTap, errorTap, successTap } = useHaptics();
+
   const [selectedDate, setSelectedDate] = useState(new Date());
-
-  // Vilken användare som är aktiv — styr färg på knappar och nya händelser
   const [activeUserId, setActiveUserId] = useState(1);
-
-  // Styr om AddEventModal (skapa/redigera händelse) är synlig
   const [showAddModal, setShowAddModal] = useState(false);
-
-  // Styr om dagmodalen (händelser + väder för vald dag) är synlig
   const [showDayModal, setShowDayModal] = useState(false);
-
-  // Håller den händelse som ska redigeras — null betyder att vi skapar en ny händelse
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
-
-  // Väderdata för vald dag — null medan den laddas eller om den inte hämtats än
   const [weather, setWeather] = useState<{ temperature: number; weatherCode: number } | null>(null);
 
-  // Går till föregående månad genom att skapa ett nytt Date med månaden -1
-  const prevMonth = () =>
+  // Går till föregående månad — lätt haptic
+  const prevMonth = () => {
+    lightTap();
     setCurrentMonth(
       new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1)
     );
+  };
 
-  // Går till nästa månad genom att skapa ett nytt Date med månaden +1
-  const nextMonth = () =>
+  // Går till nästa månad — lätt haptic
+  const nextMonth = () => {
+    lightTap();
     setCurrentMonth(
       new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)
     );
+  };
+
+  // Hoppar till aktuell månad och markerar dagens datum — medium haptic
+  const goToToday = () => {
+    mediumTap();
+    const today = new Date();
+    setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+    setSelectedDate(today);
+  };
 
   // Hämtar väder när dagmodalen öppnas eller när vald dag ändras
-  // Återställer weather till null först så att "Hämtar väder..." visas under laddning
   useEffect(() => {
     if (showDayModal) {
       setWeather(null);
@@ -91,15 +83,14 @@ export default function CalendarScreen() {
     }
   }, [selectedDate, showDayModal]);
 
-  // Anropas när användaren trycker på en dag i kalendern
-  // Sätter vald dag och öppnar dagmodalen
+  // Anropas när användaren trycker på en dag — lätt haptic
   const handleSelectDate = (date: Date) => {
+    lightTap();
     setSelectedDate(date);
     setShowDayModal(true);
   };
 
-  // Filtrerar fram händelser som tillhör den valda dagen
-  // Jämför år, månad och dag separat för att undvika tidzonsproblem
+  // Filtrerar fram händelser för den valda dagen
   const eventsForSelectedDate = events.filter((e) => {
     const d = new Date(e.startTime);
     return (
@@ -109,8 +100,7 @@ export default function CalendarScreen() {
     );
   });
 
-  // Sparar händelse — hanterar både skapa ny och uppdatera befintlig
-  // reminderMinutes kommer nu från AddEventModal istället för att vara hårdkodat till 15
+  // Sparar händelse — success haptic vid lyckat sparande, error haptic vid fel
   const handleSave = async (data: {
     title: string;
     description: string;
@@ -118,21 +108,18 @@ export default function CalendarScreen() {
     endTime: number;
     userId: number;
     templateColor: string | null;
-    reminderMinutes: number; // Vald påminnelsetid från AddEventModal
+    reminderMinutes: number;
   }) => {
     try {
       if (editingEvent) {
-        // Redigeringsläge — uppdatera befintlig händelse i Firebase
+        // Redigeringsläge — uppdatera befintlig händelse
         await updateEvent(editingEvent.id, {
           ...data,
           categoryId: null,
           reminderMinutes: data.reminderMinutes,
         });
 
-        // Avbryt alltid gammal notis vid redigering
         await cancelReminder(editingEvent.id);
-
-        // Schemalägg ny notis bara om påminnelse valts (värde > 0 = inte "Ingen")
         if (data.reminderMinutes > 0) {
           await scheduleReminder(
             editingEvent.id,
@@ -142,30 +129,30 @@ export default function CalendarScreen() {
           );
         }
       } else {
-        // Skapandeläge — skapa ny händelse i Firebase
+        // Skapandeläge — skapa ny händelse
         const id = await addEvent({
           ...data,
           categoryId: null,
           reminderMinutes: data.reminderMinutes,
         });
 
-        // Schemalägg notis bara om påminnelse valts och händelsen sparades
         if (id && data.reminderMinutes > 0) {
           await scheduleReminder(id, data.title, data.startTime, data.reminderMinutes);
         }
       }
 
-      // Återställ redigeringsläge och stäng modalen
+      // Lyckat sparande — framgångsfeedback
+      await successTap();
       setEditingEvent(null);
       setShowAddModal(false);
     } catch (e) {
-      // Visar felmeddelande om Firebase inte svarar
+      // Fel vid sparande — felFeedback
+      await errorTap();
       Alert.alert('Fel', 'Kunde inte spara händelsen. Kontrollera din anslutning.');
     }
   };
 
-  // Visar en bekräftelsedialog innan händelsen raderas
-  // Vid bekräftelse: avbryt notisen och radera händelsen från Firebase
+  // Raderar händelse — tung haptic vid bekräftelse, error haptic vid fel
   const handleDelete = (id: string) => {
     Alert.alert('Ta bort?', 'Vill du ta bort denna händelse?', [
       { text: 'Avbryt', style: 'cancel' },
@@ -174,9 +161,12 @@ export default function CalendarScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await cancelReminder(id); // Avbryt den schemalagda notisen
-            await deleteEvent(id);    // Radera från Firebase
+            // Tung feedback för destruktiv åtgärd
+            await heavyTap();
+            await cancelReminder(id);
+            await deleteEvent(id);
           } catch (e) {
+            await errorTap();
             Alert.alert('Fel', 'Kunde inte radera händelsen. Kontrollera din anslutning.');
           }
         },
@@ -184,7 +174,6 @@ export default function CalendarScreen() {
     ]);
   };
 
-  // Visas medan händelser laddas från Firebase vid första uppstart
   if (loading) {
     return (
       <View style={styles.center}>
@@ -194,7 +183,6 @@ export default function CalendarScreen() {
   }
 
   return (
-    // SafeAreaView säkerställer att innehållet inte döljs av notch eller statusbar
     <SafeAreaView style={styles.container}>
 
       {/* Översta raden med titel och knapp till Mallar-skärmen */}
@@ -202,31 +190,34 @@ export default function CalendarScreen() {
         <Text style={styles.header}>Familjekalender</Text>
         <TouchableOpacity
           style={styles.templatesBtn}
-          onPress={() => navigation.navigate('Templates')}
+          onPress={() => {
+            lightTap(); // Lätt feedback vid navigering
+            navigation.navigate('Templates');
+          }}
         >
           <Text style={styles.templatesBtnText}>Mallar</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Användarrad — tryck på en användare för att sätta aktiv användare */}
-      {/* Aktiv användare får sin färg som bakgrund och vit text */}
+      {/* Användarrad — aktiv användare får sin färg som bakgrund */}
       <View style={styles.userRow}>
         {Object.entries(USERS).map(([id, name]) => (
           <TouchableOpacity
             key={id}
             style={[
               styles.userBtn,
-              // Aktiv användare får sin personliga färg som bakgrund
               activeUserId === Number(id) && {
                 backgroundColor: COLORS[Number(id)],
               },
             ]}
-            onPress={() => setActiveUserId(Number(id))}
+            onPress={() => {
+              lightTap(); // Lätt feedback vid användarbyte
+              setActiveUserId(Number(id));
+            }}
           >
             <Text
               style={[
                 styles.userBtnText,
-                // Vit text när knappen har färgad bakgrund
                 activeUserId === Number(id) && { color: '#fff' },
               ]}
             >
@@ -236,8 +227,7 @@ export default function CalendarScreen() {
         ))}
       </View>
 
-      {/* Felmeddelande — visas som en gul banner om Firebase är nere */}
-      {/* error är null när allt fungerar normalt */}
+      {/* Gul varningsbanner om Firebase är nere */}
       {error && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{error}</Text>
@@ -245,7 +235,6 @@ export default function CalendarScreen() {
       )}
 
       {/* Kalenderbehållare — flex: 1 tar upp allt tillgängligt utrymme */}
-      {/* Detta eliminerar den döda ytan mellan kalendern och lägg-till-knappen */}
       <View style={styles.calendarContainer}>
         <CalendarView
           events={events}
@@ -254,16 +243,16 @@ export default function CalendarScreen() {
           currentMonth={currentMonth}
           onPrevMonth={prevMonth}
           onNextMonth={nextMonth}
+          onGoToToday={goToToday}
         />
       </View>
 
-      {/* Knapp för att lägga till ny händelse — i flödet under kalendern, inte absolut */}
-      {/* Färgen följer aktiv användares färg */}
+      {/* Knapp för att lägga till ny händelse */}
       <View style={styles.addButtonContainer}>
         <TouchableOpacity
           style={[styles.addBtn, { backgroundColor: COLORS[activeUserId] }]}
           onPress={() => {
-            // Säkerställ att vi inte är i redigeringsläge när vi skapar ny händelse
+            mediumTap(); // Medium feedback vid öppning av skapandemodal
             setEditingEvent(null);
             setShowAddModal(true);
           }}
@@ -273,17 +262,12 @@ export default function CalendarScreen() {
       </View>
 
       {/* ─── Dagmodal ─────────────────────────────────────────────────────────── */}
-      {/* Visas som ett bottom sheet när användaren trycker på en dag i kalendern */}
-      {/* Tryck på overlay utanför modalen stänger den */}
       <Modal visible={showDayModal} animationType="slide" transparent>
-
-        {/* Mörk halvtransparent overlay — täcker hela skärmen bakom modalen */}
         <TouchableOpacity
           style={styles.dayModalOverlay}
           activeOpacity={1}
           onPress={() => setShowDayModal(false)}
         >
-          {/* Inre TouchableOpacity förhindrar att tryck inne i modalen stänger den */}
           <TouchableOpacity activeOpacity={1} onPress={() => {}}>
             <View style={styles.dayModal}>
 
@@ -301,8 +285,7 @@ export default function CalendarScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Väderrad — visar emoji, temperatur och textbeskrivning */}
-              {/* Visar "Hämtar väder..." medan API-anropet pågår */}
+              {/* Väderrad */}
               <View style={styles.weatherRow}>
                 {weather ? (
                   <>
@@ -321,39 +304,36 @@ export default function CalendarScreen() {
                 )}
               </View>
 
-              {/* Händelselista — maxHeight begränsar höjden och ScrollView hanterar overflow */}
-              {/* Tryck på ett kort öppnar redigeringsmodalen */}
-              {/* Långtryck på ett kort öppnar bekräftelsedialog för radering */}
+              {/* Händelselista — tryck redigerar, långtryck raderar */}
               <ScrollView
                 style={styles.eventScroll}
                 showsVerticalScrollIndicator={false}
               >
                 {eventsForSelectedDate.length === 0 ? (
-                  // Visas om inga händelser finns för dagen
                   <Text style={styles.empty}>Inga händelser denna dag</Text>
                 ) : (
                   eventsForSelectedDate.map((item) => (
                     <EventCard
                       key={item.id}
                       event={item}
-                      // Tryck öppnar redigeringsmodalen med händelsens befintliga data
                       onPress={() => {
+                        lightTap(); // Lätt feedback vid öppning av redigering
                         setEditingEvent(item);
                         setShowDayModal(false);
                         setShowAddModal(true);
                       }}
-                      // Långtryck öppnar bekräftelsedialog för radering
                       onLongPress={() => handleDelete(item.id)}
                     />
                   ))
                 )}
               </ScrollView>
 
-              {/* Knapp längst ner — stänger dagmodalen och öppnar AddEventModal i skapandeläge */}
+              {/* Knapp för att lägga till händelse på vald dag */}
               <TouchableOpacity
                 style={[styles.addDayBtn, { backgroundColor: COLORS[activeUserId] }]}
                 onPress={() => {
-                  setEditingEvent(null); // Säkerställ skapandeläge
+                  mediumTap(); // Medium feedback vid öppning av skapandemodal
+                  setEditingEvent(null);
                   setShowDayModal(false);
                   setShowAddModal(true);
                 }}
@@ -368,13 +348,10 @@ export default function CalendarScreen() {
       {/* ─── Slut dagmodal ────────────────────────────────────────────────────── */}
 
       {/* Modal för att skapa eller redigera händelse */}
-      {/* existingEvent är null vid skapande, annars den händelse som redigeras */}
-      {/* selectedDate skickas med så att datumet är förifyllt */}
-      {/* activeUserId skickas med så att rätt användare är förvald */}
       <AddEventModal
         visible={showAddModal}
         onClose={() => {
-          // Återställ redigeringsläge när modalen stängs utan att spara
+          lightTap(); // Lätt feedback vid stängning
           setEditingEvent(null);
           setShowAddModal(false);
         }}
@@ -390,20 +367,15 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Huvudbehållare — flex: 1 fyller hela skärmen
   container: {
     flex: 1,
     backgroundColor: '#fff',
   },
-
-  // Centrerad vy för laddningsskärmen
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // Rad med titel och Mallar-knapp
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -412,15 +384,11 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
   },
-
-  // Rubriktexten "Familjekalender"
   header: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#1a1a1a',
   },
-
-  // Knappen som navigerar till Mallar-skärmen
   templatesBtn: {
     backgroundColor: '#6200ee',
     paddingHorizontal: 12,
@@ -432,16 +400,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
-
-  // Rad med användarknappar (Alex, Melinda, Ryan)
   userRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     gap: 8,
     marginBottom: 8,
   },
-
-  // Enskild användarknapp — bakgrundsfärg sätts dynamiskt vid aktiv användare
   userBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -452,9 +416,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
-
-  // Gul varningsbanner som visas när Firebase är nere
-  // Visas bara när error-statet i useEvents inte är null
   errorBanner: {
     backgroundColor: '#fff3cd',
     paddingHorizontal: 16,
@@ -466,19 +427,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
-
-  // Behållare för CalendarView — flex: 1 tar upp allt ledigt utrymme
   calendarContainer: {
     flex: 1,
   },
-
-  // Behållare för lägg-till-knappen — i flödet under kalendern
   addButtonContainer: {
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-
-  // Knappen "Lägg till händelse" under kalendern
   addBtn: {
     padding: 14,
     borderRadius: 10,
@@ -489,24 +444,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 16,
   },
-
-  // Mörk halvtransparent overlay bakom dagmodalen
   dayModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end', // Placerar modalen längst ner (bottom sheet-stil)
+    justifyContent: 'flex-end',
   },
-
-  // Själva modalboxen — rundade övre hörn, vit bakgrund
   dayModal: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    maxHeight: '85%', // Begränsar höjden till 85% av skärmen
+    maxHeight: '85%',
   },
-
-  // Rubrikrad i dagmodalen med datum och stängknapp
   dayModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -516,7 +465,7 @@ const styles = StyleSheet.create({
   dayModalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    textTransform: 'capitalize', // Stor bokstav på veckodagen
+    textTransform: 'capitalize',
     color: '#1a1a1a',
   },
   closeBtn: {
@@ -524,8 +473,6 @@ const styles = StyleSheet.create({
     color: '#888',
     padding: 4,
   },
-
-  // Väderrad med grå bakgrund
   weatherRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -539,22 +486,15 @@ const styles = StyleSheet.create({
   weatherTemp: { fontSize: 18, fontWeight: '700', color: '#1a1a1a' },
   weatherDesc: { fontSize: 14, color: '#666' },
   weatherLoading: { fontSize: 13, color: '#aaa' },
-
-  // ScrollView för händelselistan — maxHeight ger utrymme för ~3-4 kort
-  // Scrollar automatiskt om det finns fler händelser än vad som ryms
   eventScroll: {
     maxHeight: 300,
   },
-
-  // Text som visas när inga händelser finns för dagen
   empty: {
     textAlign: 'center',
     marginTop: 20,
     color: '#aaa',
     marginBottom: 20,
   },
-
-  // Knappen "Lägg till händelse" inne i dagmodalen
   addDayBtn: {
     padding: 14,
     borderRadius: 10,
